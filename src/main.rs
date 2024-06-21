@@ -1,10 +1,33 @@
 use std::{alloc::System, error::Error, io, sync::{Arc, Mutex}, thread, time::Duration};
 use chrono::prelude::*;
 use rusqlite::{Params, Connection, Result};
-use sysinfo::{
-    Components, Disks, System as SystemData,
-};
+use sysinfo::{Components, Disks, System as SystemData};
 
+struct SysRecord {
+    os: String,
+    osversion: String,
+    hostname: String
+}
+
+struct ComponentRecord {
+    // timestamp: TimeObject (Need to find a fitting object compatible with db)
+    label: String,
+    temp: i32
+}
+
+struct DiskRecord {
+    // timestamp: TimeObject
+    name: String,
+    total: u64,
+    available: u64
+}
+
+struct RAMRecord {
+    total_memory: u64,
+    used_memory: u64,
+    total_swap: u64,
+    used_swap: u64
+}
 
 fn main() {
 
@@ -201,9 +224,10 @@ fn create_schema(conn: &Connection) {
     match conn.execute(
         "CREATE TABLE IF NOT EXISTS ram (
                 id INTEGER PRIMARY KEY,
-                timestamp TEXT NOT NULL,
-                label TEXT NOT NULL,
-                temp INTEGER NOT NULL
+                total_memory INTEGER NOT NULL
+                used_memory INTEGER NOT NULL
+                total_swap INTEGER NOT NULL
+                used_swap INTEGER NOT NULL
                 )",
         ()
     ) {
@@ -252,35 +276,43 @@ fn write_sysdata(sys: &mut SystemData, conn: &Connection) {
 }
 
 fn view_sys_records(conn: &Connection) -> Result<()>{
-
+    // TODO: Make this a struct so its more readable
     println!("Viewing System records...");
 
     let mut stmt = conn.prepare(
         "SELECT os, osversion, hostname FROM sys"
     )?;
 
-    let sysdata_iter = stmt.query_map([], |row| {
+    let sys_data_iter = stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
     })?;
 
-    for sysdata in sysdata_iter {
-        println!("Name: {} , Version: {} , hostname: {}", sysdata.as_ref().unwrap().0, sysdata.as_ref().unwrap().1, sysdata.as_ref().unwrap().2);
+    for sys_data in sys_data_iter {
+        println!("Name: {} , Version: {} , hostname: {}", sys_data.as_ref().unwrap().0, sys_data.as_ref().unwrap().1, sys_data.as_ref().unwrap().2);
     }
     Ok(())
 }
 
-fn view_component_records(conn: &Connection ) {
-   println!("Viewing Component records...");
- 
-}
+// fn view_component_records(conn: &Connection ) -> Result<()>{
+//     println!("Viewing Component records...");
 
-fn view_ram_records(conn: &Connection ) {
-    println!("Viewing RAM records...");
+//     let mut stmt = conn.prepare(
+//         "SELECT timestamp, label, temp FROM components"
+//     )?;
+
+//     let component_data_iter = stmt.query_map([], |row| {
+//         Ok(())
+//     })?;
+//     Ok(())
+// }
+
+// fn view_ram_records(conn: &Connection ) {
+//     println!("Viewing RAM records...");
     
-}
+// }
 
-fn view_disk_records(conn: &Connection ) {
-    println!("Viewing Disk records...");
+// fn view_disk_records(conn: &Connection ) {
+//     println!("Viewing Disk records...");
 
-}
+// }
 
