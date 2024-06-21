@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rusqlite = "0.31.0"
+sysinfo = "0.30.12"
+chrono = "0.4"

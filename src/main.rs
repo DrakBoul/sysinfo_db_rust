@@ -1,6 +1,23 @@
-use std::io;
+use std::{io, error::Error, sync::{Arc, Mutex}, thread, time::Duration};
+use chrono::prelude::*;
+use rusqlite::{Params, Connection};
+
 
 fn main() {
+
+    //establish connection to db and handle errors
+    let conn = match Connection::open("./data/sysinfo.db") {
+        Ok(conn) => conn,
+        Err(e) => {
+            println!("Connection failed. Make sure the db exists and the path is correct");
+            println!("{}", e);
+            return;
+        }
+    };
+
+    // Create the database schema
+    create_schema(&conn);
+
     println!("Welcome to the sysinfo database!");
     // Loop to handle user input
     loop {
@@ -77,6 +94,7 @@ fn start_recording() {
 
 fn stop_recording() {
     println!("Stopping recording...");
+    
 }
 
 fn view_records() {
@@ -85,4 +103,77 @@ fn view_records() {
 
 fn live_data_feed() {
     println!("Starting live data feed...");
+    println!("Press 'q' then enter to return to main menu.");
+    loop {
+        
+    }
+}
+fn create_schema(conn: &Connection) {
+
+    match conn.execute(
+        "CREATE TABLE IF NOT EXISTS component (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                label TEXT NOT NULL,
+                temp INTEGER NOT NULL
+                )",
+        ()
+    ) {
+        Ok(_) => {},
+        Err(e) => {
+            println!("Creating table 'component' failed...");
+            println!("{}", e);
+            return;
+        }
+    }
+
+    match conn.execute(
+        "CREATE TABLE IF NOT EXISTS disk (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                name TEXT NOT NULL,
+                total INTEGER NOT NULL,
+                available INTEGER NOT NULL
+                )",
+        ()
+    ) {
+        Ok(_) => {},
+        Err(e) => {
+            println!("Creating table 'disk' failed");
+            println!("{}", e);
+        }
+    }
+
+
+    match conn.execute(
+        "CREATE TABLE IF NOT EXISTS ram (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                label TEXT NOT NULL,
+                temp INTEGER NOT NULL
+                )",
+        ()
+    ) {
+        Ok(_) => {},
+        Err(e) => {
+            println!("Creating table 'ram' failed");
+            println!("{}", e);
+        }
+    }
+
+    match conn.execute(
+        "CREATE TABLE IF NOT EXISTS sys (
+                id INTEGER PRIMARY KEY,
+                os TEXT NOT NULL,
+                osversion TEXT NOT NULL,
+                hostname TEXT NOT NULL
+                )",
+        ()
+    ) {
+        Ok(_) => {},
+        Err(e) => {
+            println!("Creating 'sys' table failed");
+            println!("{}", e);
+        }
+    }
 }
