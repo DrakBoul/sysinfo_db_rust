@@ -1,7 +1,15 @@
-use std::{alloc::System, error::Error, io, sync::{Arc, Mutex}, thread, time::Duration};
+use std::{alloc::System, error::Error, fmt::{self, Formatter}, io, result, sync::{Arc, Mutex}, thread, time::Duration};
 use chrono::prelude::*;
-use rusqlite::{Params, Connection, Result};
-use sysinfo::{Components, Disks, System as SystemData};
+use rusqlite::{Params, Connection, Result, Row};
+use sysinfo::{Components, Disk, Disks, System as SystemData};
+
+
+trait Record: Sized + fmt::Display {
+    fn write_to_db(&self, conn: &Connection) -> Result<()>;
+    fn query() -> &'static str;
+    fn from_row(row: &Row) -> Result<Self>;
+    
+}
 
 struct SysRecord {
     os: String,
@@ -9,24 +17,144 @@ struct SysRecord {
     hostname: String
 }
 
+impl fmt::Display for SysRecord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "OS: {} , Version: {} , Hostname: {}", self.os, self.osversion, self.hostname)
+    }
+}
+
+impl Record for SysRecord {
+
+    fn write_to_db(&self, conn: &Connection) -> Result<()> {
+        conn.execute(
+            "INSERT INTO sys (os, osversion, hostname) VALUES (?1, ?2, ?3)", 
+        (&self.os, &self.osversion, &self.hostname))?;
+        Ok(())
+    }
+
+    fn query() -> &'static str {
+        "SELECT os, osversion, hostname FROM sys"
+    }
+
+    fn from_row(row: &Row) -> Result<Self> {
+        Ok(SysRecord {
+            os: row.get(0)?,
+            osversion: row.get(1)?,
+            hostname: row.get(2)?,
+        })
+    }
+}
+
+
 struct ComponentRecord {
-    // timestamp: TimeObject (Need to find a fitting object compatible with db)
+    timestamp: String,
     label: String,
     temp: i32
 }
 
+impl fmt::Display for ComponentRecord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Time: {} , Label: {} , Temperature: {}", self.timestamp, self.label, self.temp)
+    }
+}
+
+impl Record for ComponentRecord {
+
+    fn write_to_db(&self, conn: &Connection) -> Result<()> {
+        conn.execute(
+            "INSERT INTO component (timestamp, label, temp) VALUES (?1, ?2, ?3)", 
+        (&self.timestamp, &self.label, &self.temp))?;
+        Ok(())
+    }
+
+    fn query() -> &'static str {
+        "SELECT timestamp, label, temp FROM components"
+    }
+
+    fn from_row(row: &Row) -> Result<Self> {
+        Ok(ComponentRecord {
+            timestamp: row.get(0)?,
+            label: row.get(1)?,
+            temp: row.get(2)?,
+        })
+    }
+        
+}
+
+
 struct DiskRecord {
-    // timestamp: TimeObject
+    timestamp: String,
     name: String,
     total: u64,
     available: u64
 }
 
+impl fmt::Display for DiskRecord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Time: {} , Name: {} , Total: {} , Available: {}", self.timestamp, self.name, self.total, self.available)
+    }
+}
+
+impl Record for DiskRecord {
+
+    fn write_to_db(&self, conn: &Connection) -> Result<()> {
+        conn.execute(
+            "INSERT INTO component (timestamp, name, total, available) VALUES (?1, ?2, ?3, ?4)", 
+        (&self.timestamp, &self.name, &self.total, &self.available))?;
+        Ok(())
+    }
+
+    fn query() -> &'static str {
+        "SELECT timestamp, name, total, available FROM disk"
+    }
+
+    fn from_row(row: &Row) -> Result<Self> {
+        Ok(DiskRecord {
+            timestamp: row.get(0)?,
+            name: row.get(1)?,
+            total: row.get(2)?,
+            available: row.get(3)?,
+        })
+    }
+}
+
 struct RAMRecord {
+    timestamp: String,
     total_memory: u64,
     used_memory: u64,
     total_swap: u64,
     used_swap: u64
+}
+
+impl fmt::Display for RAMRecord {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Time: {} , Total Memory: {} , Used Memory: {} , Total Swap: {} , Used Swap: {}", 
+        self.timestamp, self.total_memory, self.used_memory, self.total_swap, self.used_swap)
+    }
+}
+
+impl Record for RAMRecord {
+
+    fn write_to_db(&self, conn: &Connection) -> Result<()> {
+        conn.execute(
+            "INSERT INTO component (timestamp, total_memory, used_memory, total_swap, used_swap) VALUES (?1, ?2, ?3, ?4, ?5)", 
+        (&self.timestamp, &self.total_memory, &self.used_memory, &self.total_swap, &self.used_swap))?;
+        Ok(())
+    }
+
+    fn query() -> &'static str {
+        "SELECT timestamp, total_memory, used_memory, total_swap, used_swap FROM ram"
+    }
+
+    fn from_row(row: &Row) -> Result<Self> {
+        Ok(RAMRecord {
+            timestamp: row.get(0)?,
+            total_memory: row.get(1)?,
+            used_memory: row.get(2)?,
+            total_swap: row.get(3)?,
+            used_swap: row.get(4)?,
+        })
+    }
 }
 
 fn main() {
@@ -162,10 +290,10 @@ fn view_records(conn: &Connection) {
         let input = view_records_menu(&mut input);
 
         match input {
-            1 => {view_sys_records(conn);},
-            // 2 => view_component_records(conn),
-            // 3 => view_ram_records(conn),
-            // 4 => view_disk_records(conn),
+            1 => {let _ = query_db_all::<SysRecord>(conn);},
+            2 => {let _ = query_db_all::<ComponentRecord>(conn);}
+            3 => {let _ = query_db_all::<RAMRecord>(conn);}
+            4 => {let _ = query_db_all::<DiskRecord>(conn);}
             5 => return,
             _ => {
                 println!("Invalid input. Please enter a number 1-5.");
@@ -224,9 +352,9 @@ fn create_schema(conn: &Connection) {
     match conn.execute(
         "CREATE TABLE IF NOT EXISTS ram (
                 id INTEGER PRIMARY KEY,
-                total_memory INTEGER NOT NULL
-                used_memory INTEGER NOT NULL
-                total_swap INTEGER NOT NULL
+                total_memory INTEGER NOT NULL,
+                used_memory INTEGER NOT NULL,
+                total_swap INTEGER NOT NULL,
                 used_swap INTEGER NOT NULL
                 )",
         ()
@@ -259,60 +387,25 @@ fn write_sysdata(sys: &mut SystemData, conn: &Connection) {
     // TODO: This should only write once
 
     sys.refresh_all();
-
-    match conn.execute(
-        "INSERT INTO sys 
-        (os, osversion, hostname) VALUES (?1, ?2, ?3)", 
-        (SystemData::name().unwrap(), SystemData::os_version().unwrap(), SystemData::host_name().unwrap())
-    ) 
-        {
-            Ok(_) => {},
-            Err(e) => {
-                println!("Error writing system data.");
-                println!("{}", e);
-                return;
-            }       
-        }
+    let sys_record = SysRecord {
+        os: SystemData::name().unwrap(),
+        osversion: SystemData::os_version().unwrap(), 
+        hostname: SystemData::host_name().unwrap(),
+    };
+    // Does not currently use result returned
+    let _ = sys_record.write_to_db(conn);
+    
 }
 
-fn view_sys_records(conn: &Connection) -> Result<()>{
-    // TODO: Make this a struct so its more readable
-    println!("Viewing System records...");
 
-    let mut stmt = conn.prepare(
-        "SELECT os, osversion, hostname FROM sys"
-    )?;
-
-    let sys_data_iter = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
-    })?;
-
-    for sys_data in sys_data_iter {
-        println!("Name: {} , Version: {} , hostname: {}", sys_data.as_ref().unwrap().0, sys_data.as_ref().unwrap().1, sys_data.as_ref().unwrap().2);
+fn query_db_all<T: Record>(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare(T::query())?;
+    let record_iter = stmt.query_map([], |row| T::from_row(row))?;
+    
+    for record in record_iter {
+        println!("{}", record?);
     }
+
     Ok(())
 }
-
-// fn view_component_records(conn: &Connection ) -> Result<()>{
-//     println!("Viewing Component records...");
-
-//     let mut stmt = conn.prepare(
-//         "SELECT timestamp, label, temp FROM components"
-//     )?;
-
-//     let component_data_iter = stmt.query_map([], |row| {
-//         Ok(())
-//     })?;
-//     Ok(())
-// }
-
-// fn view_ram_records(conn: &Connection ) {
-//     println!("Viewing RAM records...");
-    
-// }
-
-// fn view_disk_records(conn: &Connection ) {
-//     println!("Viewing Disk records...");
-
-// }
 
