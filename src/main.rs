@@ -47,14 +47,14 @@ impl Record for SysRecord {
 
 
 struct ComponentRecord {
-    timestamp: String,
+    datetime: String,
     label: String,
     temp: i32
 }
 
 impl fmt::Display for ComponentRecord {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Time: {} , Label: {} , Temperature: {}", self.timestamp, self.label, self.temp)
+        write!(f, "Time: {} , Label: {} , Temperature: {}", self.datetime, self.label, self.temp)
     }
 }
 
@@ -62,18 +62,18 @@ impl Record for ComponentRecord {
 
     fn write_to_db(&self, conn: &Connection) -> Result<()> {
         conn.execute(
-            "INSERT INTO component (timestamp, label, temp) VALUES (?1, ?2, ?3)", 
-        (&self.timestamp, &self.label, &self.temp))?;
+            "INSERT INTO component (datetime, label, temp) VALUES (?1, ?2, ?3)", 
+        (&self.datetime, &self.label, &self.temp))?;
         Ok(())
     }
 
     fn query() -> &'static str {
-        "SELECT timestamp, label, temp FROM components"
+        "SELECT datetime, label, temp FROM components"
     }
 
     fn from_row(row: &Row) -> Result<Self> {
         Ok(ComponentRecord {
-            timestamp: row.get(0)?,
+            datetime: row.get(0)?,
             label: row.get(1)?,
             temp: row.get(2)?,
         })
@@ -83,7 +83,7 @@ impl Record for ComponentRecord {
 
 
 struct DiskRecord {
-    timestamp: String,
+    datetime: String,
     name: String,
     total: u64,
     available: u64
@@ -91,7 +91,7 @@ struct DiskRecord {
 
 impl fmt::Display for DiskRecord {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Time: {} , Name: {} , Total: {} , Available: {}", self.timestamp, self.name, self.total, self.available)
+        write!(f, "Time: {} , Name: {} , Total: {} , Available: {}", self.datetime, self.name, self.total, self.available)
     }
 }
 
@@ -99,18 +99,18 @@ impl Record for DiskRecord {
 
     fn write_to_db(&self, conn: &Connection) -> Result<()> {
         conn.execute(
-            "INSERT INTO component (timestamp, name, total, available) VALUES (?1, ?2, ?3, ?4)", 
-        (&self.timestamp, &self.name, &self.total, &self.available))?;
+            "INSERT INTO component (datetime, name, total, available) VALUES (?1, ?2, ?3, ?4)", 
+        (&self.datetime, &self.name, &self.total, &self.available))?;
         Ok(())
     }
 
     fn query() -> &'static str {
-        "SELECT timestamp, name, total, available FROM disk"
+        "SELECT datetime, name, total, available FROM disk"
     }
 
     fn from_row(row: &Row) -> Result<Self> {
         Ok(DiskRecord {
-            timestamp: row.get(0)?,
+            datetime: row.get(0)?,
             name: row.get(1)?,
             total: row.get(2)?,
             available: row.get(3)?,
@@ -119,7 +119,7 @@ impl Record for DiskRecord {
 }
 
 struct RAMRecord {
-    timestamp: String,
+    datetime: String,
     total_memory: u64,
     used_memory: u64,
     total_swap: u64,
@@ -129,7 +129,7 @@ struct RAMRecord {
 impl fmt::Display for RAMRecord {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Time: {} , Total Memory: {} , Used Memory: {} , Total Swap: {} , Used Swap: {}", 
-        self.timestamp, self.total_memory, self.used_memory, self.total_swap, self.used_swap)
+        self.datetime, self.total_memory, self.used_memory, self.total_swap, self.used_swap)
     }
 }
 
@@ -137,18 +137,18 @@ impl Record for RAMRecord {
 
     fn write_to_db(&self, conn: &Connection) -> Result<()> {
         conn.execute(
-            "INSERT INTO component (timestamp, total_memory, used_memory, total_swap, used_swap) VALUES (?1, ?2, ?3, ?4, ?5)", 
-        (&self.timestamp, &self.total_memory, &self.used_memory, &self.total_swap, &self.used_swap))?;
+            "INSERT INTO component (datetime, total_memory, used_memory, total_swap, used_swap) VALUES (?1, ?2, ?3, ?4, ?5)", 
+        (&self.datetime, &self.total_memory, &self.used_memory, &self.total_swap, &self.used_swap))?;
         Ok(())
     }
 
     fn query() -> &'static str {
-        "SELECT timestamp, total_memory, used_memory, total_swap, used_swap FROM ram"
+        "SELECT datetime, total_memory, used_memory, total_swap, used_swap FROM ram"
     }
 
     fn from_row(row: &Row) -> Result<Self> {
         Ok(RAMRecord {
-            timestamp: row.get(0)?,
+            datetime: row.get(0)?,
             total_memory: row.get(1)?,
             used_memory: row.get(2)?,
             total_swap: row.get(3)?,
@@ -319,7 +319,7 @@ fn create_schema(conn: &Connection) {
     match conn.execute(
         "CREATE TABLE IF NOT EXISTS component (
                 id INTEGER PRIMARY KEY,
-                timestamp TEXT NOT NULL,
+                datetime DATETIME NOT NULL,
                 label TEXT NOT NULL,
                 temp INTEGER NOT NULL
                 )",
@@ -336,7 +336,7 @@ fn create_schema(conn: &Connection) {
     match conn.execute(
         "CREATE TABLE IF NOT EXISTS disk (
                 id INTEGER PRIMARY KEY,
-                timestamp TEXT NOT NULL,
+                datetime DATETIME NOT NULL,
                 name TEXT NOT NULL,
                 total INTEGER NOT NULL,
                 available INTEGER NOT NULL
@@ -353,6 +353,7 @@ fn create_schema(conn: &Connection) {
     match conn.execute(
         "CREATE TABLE IF NOT EXISTS ram (
                 id INTEGER PRIMARY KEY,
+                datetime DATETIME NOT NULL,
                 total_memory INTEGER NOT NULL,
                 used_memory INTEGER NOT NULL,
                 total_swap INTEGER NOT NULL,
