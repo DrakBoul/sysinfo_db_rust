@@ -290,16 +290,17 @@ fn view_records(conn: &Connection) {
         let input = view_records_menu(&mut input);
 
         match input {
-            1 => {let _ = query_db_all::<SysRecord>(conn);},
-            2 => {let _ = query_db_all::<ComponentRecord>(conn);}
-            3 => {let _ = query_db_all::<RAMRecord>(conn);}
-            4 => {let _ = query_db_all::<DiskRecord>(conn);}
+            1 => {let _ = print_records(query_db_all::<SysRecord>(conn));},
+            2 => {let _ = print_records(query_db_all::<ComponentRecord>(conn));}
+            3 => {let _ = print_records(query_db_all::<RAMRecord>(conn));}
+            4 => {let _ = print_records(query_db_all::<DiskRecord>(conn));}
             5 => return,
             _ => {
                 println!("Invalid input. Please enter a number 1-5.");
                 continue;
             }
         }
+
     }
     
 
@@ -384,28 +385,80 @@ fn create_schema(conn: &Connection) {
 }
 
 fn write_sysdata(sys: &mut SystemData, conn: &Connection) {
-    // TODO: This should only write once
-
+    // Refresh system data
     sys.refresh_all();
-    let sys_record = SysRecord {
+
+    // Create a new SysRecord with current system information
+    let sys_record = SysRecord{
         os: SystemData::name().unwrap(),
-        osversion: SystemData::os_version().unwrap(), 
+        osversion: SystemData::os_version().unwrap(),
         hostname: SystemData::host_name().unwrap(),
     };
-    // Does not currently use result returned
-    let _ = sys_record.write_to_db(conn);
-    
+    // Query existing SysRecords from the database
+    let old_records_result = query_db_all::<SysRecord>(conn);
+
+    match old_records_result {
+        Ok(old_records) => {
+            if old_records.is_empty() {
+                // If there are no old records, write the current sys_record to the database
+                match sys_record.write_to_db(conn) {
+                    Ok(_) => println!("System data written successfully."),
+                    Err(e) => println!("Error occurred while writing system data: {}", e),
+                }
+            } else {
+                // Check if the current hostname already exists in the old records
+                let mut hostname_exists = false;
+                for record in &old_records {
+                    if record.hostname == sys_record.hostname {
+                        hostname_exists = true;
+                        println!("System data not written: record for '{}' already exists.", sys_record.hostname);
+                        break;
+                    }
+                }
+
+                // If the hostname doesn't exist, write the sys_record to the database
+                if !hostname_exists {
+                    match sys_record.write_to_db(conn) {
+                        Ok(_) => println!("System data written successfully."),
+                        Err(e) => println!("Error occurred while writing system data: {}", e),
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("Error retrieving old records: {}", e);
+        }
+    }
 }
 
 
-fn query_db_all<T: Record>(conn: &Connection) -> Result<()> {
+fn query_db_all<T>(conn: &Connection) -> Result<Vec<T>>
+where
+    T: Record,
+{
     let mut stmt = conn.prepare(T::query())?;
     let record_iter = stmt.query_map([], |row| T::from_row(row))?;
-    
+
+    let mut records = Vec::new();
     for record in record_iter {
-        println!("{}", record?);
+        records.push(record?);
     }
 
-    Ok(())
+    Ok(records)
 }
 
+
+fn print_records<T>(records: Result<Vec<T>>) -> Result<()>
+where
+    T: Record + std::fmt::Display,
+{
+    match records {
+        Ok(records) => {
+            for record in records {
+                println!("{}", record);
+            }
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
