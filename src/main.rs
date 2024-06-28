@@ -1,11 +1,12 @@
-use std::{alloc::System, error::Error, fmt::{self, Formatter}, io, result, sync::{Arc, Mutex, MutexGuard}, thread, time::Duration};
+use std::{fmt::{self}, io, sync::{mpsc::Sender, Arc, Mutex}, thread, time::Duration};
 use chrono::prelude::*;
 use rusqlite::{Params, Connection, Result, Row};
 use sysinfo::{Components, Disk, Disks, System as SystemData};
 use regex::Regex;
+use std::sync::mpsc;
 
 trait Record: Sized + fmt::Display {
-    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()>;
+    fn write_to_db(&self, conn: Arc<Mutex<Connection>>) -> Result<()>;
     fn query() -> &'static str;
     fn from_row(row: &Row) -> Result<Self>;
     
@@ -25,7 +26,8 @@ impl fmt::Display for SysRecord {
 
 impl Record for SysRecord {
 
-    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()> {
+    fn write_to_db(&self, conn: Arc<Mutex<Connection>>) -> Result<()> {
+        let conn = conn.lock().unwrap();
         conn.execute(
             "INSERT INTO sys (os, osversion, hostname) VALUES (?1, ?2, ?3)", 
         (&self.os, &self.osversion, &self.hostname))?;
@@ -49,7 +51,7 @@ impl Record for SysRecord {
 struct ComponentRecord {
     datetime: String,
     label: String,
-    temp: i32
+    temp: f32
 }
 
 impl fmt::Display for ComponentRecord {
@@ -60,7 +62,8 @@ impl fmt::Display for ComponentRecord {
 
 impl Record for ComponentRecord {
 
-    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()> {
+    fn write_to_db(&self, conn: Arc<Mutex<Connection>>) -> Result<()> {
+        let conn = conn.lock().unwrap();
         conn.execute(
             "INSERT INTO component (datetime, label, temp) VALUES (?1, ?2, ?3)", 
         (&self.datetime, &self.label, &self.temp))?;
@@ -97,9 +100,10 @@ impl fmt::Display for DiskRecord {
 
 impl Record for DiskRecord {
 
-    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()> {
+    fn write_to_db(&self, conn: Arc<Mutex<Connection>>) -> Result<()> {
+        let conn = conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO component (datetime, name, total, available) VALUES (?1, ?2, ?3, ?4)", 
+            "INSERT INTO disk (datetime, name, total, available) VALUES (?1, ?2, ?3, ?4)", 
         (&self.datetime, &self.name, &self.total, &self.available))?;
         Ok(())
     }
@@ -135,9 +139,10 @@ impl fmt::Display for RAMRecord {
 
 impl Record for RAMRecord {
 
-    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()> {
+    fn write_to_db(&self, conn: Arc<Mutex<Connection>>) -> Result<()> {
+        let conn = conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO component (datetime, total_memory, used_memory, total_swap, used_swap) VALUES (?1, ?2, ?3, ?4, ?5)", 
+            "INSERT INTO ram (datetime, total_memory, used_memory, total_swap, used_swap) VALUES (?1, ?2, ?3, ?4, ?5)", 
         (&self.datetime, &self.total_memory, &self.used_memory, &self.total_swap, &self.used_swap))?;
         Ok(())
     }
@@ -171,13 +176,44 @@ fn main() {
 
     let conn = Arc::new(Mutex::new(conn));
 
-    // Create the database schema
-    create_schema(conn.clone());
+    let (tx, rx) = mpsc::channel();
 
+    // Start record function to listen when to record initalize by telling it not to record
+    tx.send(0).unwrap();
 
-    let mut sys = SystemData::new_all();
+    let conn_thread = conn.clone();
+    thread::spawn(move || {
+        create_schema(conn_thread.clone());
+        let mut sys = SystemData::new_all();
+        write_sysdata(&mut sys, conn_thread.clone());
+    
+        let mut recording = false;
+        let mut p = false;
 
-    write_sysdata(&mut sys, conn.clone());
+        loop {
+            match rx.try_recv() {
+                Ok(incoming) => {
+                    if incoming == 0 {
+                        recording = false;
+                        p = false;
+                        continue; 
+                    } else if incoming == 1 {
+                        recording = true; 
+                        p = false;
+                    } else {
+                        recording = true;
+                        p = true;
+                    }
+                }
+                Err(_) => {} 
+            }
+
+            if recording {
+                write_all_records(&mut sys, conn_thread.clone(), p); // Example recording action
+                thread::sleep(Duration::from_secs(10));
+            }
+        }
+    });
 
     println!("Welcome to the sysinfo database!");
     // Loop to handle user input
@@ -199,10 +235,10 @@ fn main() {
         };
 
         match input {
-            1 => start_recording(),
-            2 => stop_recording(),
+            1 => start_recording(tx.clone()),
+            2 => stop_recording(tx.clone()),
             3 => view_records(conn.clone()),
-            4 => live_data_feed(),
+            4 => live_data_feed(tx.clone()),
             5 => {
                 println!("Quitting Program...");
                 break;
@@ -251,8 +287,12 @@ fn view_records_menu(input: &mut String) -> u8 {
 }
 
 // TODO: Write these 4 functions for the main logic of the program
-fn start_recording() {
-
+fn start_recording(tx: Sender<u8>) {
+    // Send message to start recording
+    if let Err(err) = tx.send(1) {
+        eprintln!("Failed to send message: {}", err);
+        return;
+    }
     println!("Starting recording... We will keep recording data for you until you stop recording");
     println!("enter 'q' at any time to return to the main menu");
 
@@ -280,7 +320,8 @@ fn start_recording() {
     }
 }
 
-fn stop_recording() {
+fn stop_recording(tx: Sender<u8>) {
+    tx.send(0).unwrap();
     println!("Stopped recording...");
     
 }
@@ -308,11 +349,34 @@ fn view_records(conn: Arc<Mutex<Connection>>) {
 
 }
 
-fn live_data_feed() {
+fn live_data_feed(tx: Sender<u8>) {
+    tx.send(2).unwrap();
     println!("Starting live data feed...");
     println!("Press 'q' then enter to return to main menu.");
     loop {
-        
+        let mut input: String = String::new(); 
+        io::stdin()
+            .read_line(&mut input)
+            .expect("Reading failed");
+
+        let input: char = match input.trim().parse() {
+            Ok(c) => c,
+            Err(_) => {
+                println!("Invlaid Input. Please enter 'q' to exit to the main menu.");
+                continue;
+            }
+        };
+
+        match input {
+            'q' => {
+                tx.send(1).unwrap();
+                break
+            },
+            _ => {
+                println!("Invlaid Input. Please enter 'q' to exit to the main menu.");
+                continue;
+            }
+        }
     }
 }
 
@@ -398,12 +462,11 @@ fn write_sysdata(sys: &mut SystemData, conn: Arc<Mutex<Connection>>) {
     };
     // Query existing SysRecords from the database
     let old_records_result = query_db_all::<SysRecord>(conn.clone());
-    let conn = conn.lock().unwrap();
     match old_records_result {
         Ok(old_records) => {
             if old_records.is_empty() {
                 // If there are no old records, write the current sys_record to the database
-                match sys_record.write_to_db(conn) {
+                match sys_record.write_to_db(conn.clone()) {
                     Ok(_) => println!("System data written successfully."),
                     Err(e) => println!("Error occurred while writing system data: {}", e),
                 }
@@ -420,7 +483,7 @@ fn write_sysdata(sys: &mut SystemData, conn: Arc<Mutex<Connection>>) {
 
                 // If the hostname doesn't exist, write the sys_record to the database
                 if !hostname_exists {
-                    match sys_record.write_to_db(conn) {
+                    match sys_record.write_to_db(conn.clone()) {
                         Ok(_) => println!("System data written successfully."),
                         Err(e) => println!("Error occurred while writing system data: {}", e),
                     }
@@ -486,4 +549,75 @@ fn validate_datetime_range(dt_range: String) -> Vec<String> {
 
     dates
     
+}
+
+fn record(conn: Arc<Mutex<Connection>>, rx: &mpsc::Receiver<u8>) {
+    create_schema(conn.clone());
+    let mut sys = SystemData::new_all();
+    write_sysdata(&mut sys, conn.clone());
+
+    loop {
+        match rx.try_recv() {
+            Ok(incoming) => {
+                if incoming == 0 {
+                    break; // Exit loop if received 0
+                } else if incoming == 1 {
+                    write_all_records(&mut sys, conn.clone(), false);
+                } else {
+                    write_all_records(&mut sys, conn.clone(), true);
+                }
+                thread::sleep(Duration::from_secs(10)); 
+            }
+            Err(_) => {
+                continue;
+            }
+        }
+    }
+}
+
+fn write_all_records(sys: &mut SystemData, conn: Arc<Mutex<Connection>>, p: bool) {
+
+    sys.refresh_all();
+            let dt = Local::now();
+            let dt = dt.format("%Y-%m-%d %H:%M:%S").to_string();
+
+            let ram_record = RAMRecord {
+                datetime: dt.clone(),
+                total_memory: sys.total_memory(),
+                used_memory: sys.used_memory(),
+                total_swap: sys.total_swap(),
+                used_swap: sys.used_swap()
+            };
+            let _ = ram_record.write_to_db(conn.clone());
+            if p {
+                println!("{}", ram_record);
+            }
+
+            let disks = Disks::new_with_refreshed_list();
+            for disk in &disks {
+                let disk_record = DiskRecord {
+                    datetime: dt.clone(),
+                    name: disk.name().to_str().unwrap().to_string(),
+                    total: disk.total_space(),
+                    available: disk.available_space()
+                };
+                let _ = disk_record.write_to_db(conn.clone());
+                if p {
+                    println!("{}", disk_record);
+                }
+            }
+            
+            let components = Components::new_with_refreshed_list();
+            for component in &components {
+                let component_record = ComponentRecord {
+                    datetime: dt.clone(),
+                    label: component.label().to_string(),
+                    temp: component.temperature()
+                };
+                let _ = component_record.write_to_db(conn.clone());
+                if p {
+                    println!("{}", component_record);
+                }
+            }
+
 }
