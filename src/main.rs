@@ -2,7 +2,7 @@ use std::{alloc::System, error::Error, fmt::{self, Formatter}, io, result, sync:
 use chrono::prelude::*;
 use rusqlite::{Params, Connection, Result, Row};
 use sysinfo::{Components, Disk, Disks, System as SystemData};
-
+use regex::Regex;
 
 trait Record: Sized + fmt::Display {
     fn write_to_db(&self, conn: &Connection) -> Result<()>;
@@ -462,4 +462,26 @@ where
         }
         Err(e) => Err(e),
     }
+}
+
+// TODO: Refactor all the times we read input to use this function.
+fn read_string(prompt: &str) -> String {
+
+    println!("{}", prompt);
+    let mut input: String = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .expect("Failed to read.");
+    input
+}
+
+fn validate_datetime_range(dt_range: String) -> Vec<String> {
+    let re = Regex::new(r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}").unwrap();
+
+    let dates: Vec<String> = re.find_iter(dt_range.as_str())
+        .map(|m| m.as_str().to_string())
+        .collect();
+
+    dates
+    
 }
