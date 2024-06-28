@@ -1,11 +1,11 @@
-use std::{alloc::System, error::Error, fmt::{self, Formatter}, io, result, sync::{Arc, Mutex}, thread, time::Duration};
+use std::{alloc::System, error::Error, fmt::{self, Formatter}, io, result, sync::{Arc, Mutex, MutexGuard}, thread, time::Duration};
 use chrono::prelude::*;
 use rusqlite::{Params, Connection, Result, Row};
 use sysinfo::{Components, Disk, Disks, System as SystemData};
 use regex::Regex;
 
 trait Record: Sized + fmt::Display {
-    fn write_to_db(&self, conn: &Connection) -> Result<()>;
+    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()>;
     fn query() -> &'static str;
     fn from_row(row: &Row) -> Result<Self>;
     
@@ -25,7 +25,7 @@ impl fmt::Display for SysRecord {
 
 impl Record for SysRecord {
 
-    fn write_to_db(&self, conn: &Connection) -> Result<()> {
+    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()> {
         conn.execute(
             "INSERT INTO sys (os, osversion, hostname) VALUES (?1, ?2, ?3)", 
         (&self.os, &self.osversion, &self.hostname))?;
@@ -60,7 +60,7 @@ impl fmt::Display for ComponentRecord {
 
 impl Record for ComponentRecord {
 
-    fn write_to_db(&self, conn: &Connection) -> Result<()> {
+    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()> {
         conn.execute(
             "INSERT INTO component (datetime, label, temp) VALUES (?1, ?2, ?3)", 
         (&self.datetime, &self.label, &self.temp))?;
@@ -97,7 +97,7 @@ impl fmt::Display for DiskRecord {
 
 impl Record for DiskRecord {
 
-    fn write_to_db(&self, conn: &Connection) -> Result<()> {
+    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()> {
         conn.execute(
             "INSERT INTO component (datetime, name, total, available) VALUES (?1, ?2, ?3, ?4)", 
         (&self.datetime, &self.name, &self.total, &self.available))?;
@@ -135,7 +135,7 @@ impl fmt::Display for RAMRecord {
 
 impl Record for RAMRecord {
 
-    fn write_to_db(&self, conn: &Connection) -> Result<()> {
+    fn write_to_db(&self, conn: MutexGuard<Connection>) -> Result<()> {
         conn.execute(
             "INSERT INTO component (datetime, total_memory, used_memory, total_swap, used_swap) VALUES (?1, ?2, ?3, ?4, ?5)", 
         (&self.datetime, &self.total_memory, &self.used_memory, &self.total_swap, &self.used_swap))?;
@@ -169,13 +169,15 @@ fn main() {
         }
     };
 
+    let conn = Arc::new(Mutex::new(conn));
+
     // Create the database schema
-    create_schema(&conn);
+    create_schema(conn.clone());
 
 
     let mut sys = SystemData::new_all();
 
-    write_sysdata(&mut sys, &conn);
+    write_sysdata(&mut sys, conn.clone());
 
     println!("Welcome to the sysinfo database!");
     // Loop to handle user input
@@ -199,7 +201,7 @@ fn main() {
         match input {
             1 => start_recording(),
             2 => stop_recording(),
-            3 => view_records(&conn),
+            3 => view_records(conn.clone()),
             4 => live_data_feed(),
             5 => {
                 println!("Quitting Program...");
@@ -283,17 +285,17 @@ fn stop_recording() {
     
 }
 
-fn view_records(conn: &Connection) {
+fn view_records(conn: Arc<Mutex<Connection>>) {
 
     loop {
         let mut input = String::new();
         let input = view_records_menu(&mut input);
-
+        let conn1 = conn.clone();
         match input {
-            1 => {let _ = print_records(query_db_all::<SysRecord>(conn));},
-            2 => {let _ = print_records(query_db_all::<ComponentRecord>(conn));}
-            3 => {let _ = print_records(query_db_all::<RAMRecord>(conn));}
-            4 => {let _ = print_records(query_db_all::<DiskRecord>(conn));}
+            1 => {let _ = print_records(query_db_all::<SysRecord>(conn1));},
+            2 => {let _ = print_records(query_db_all::<ComponentRecord>(conn1));}
+            3 => {let _ = print_records(query_db_all::<RAMRecord>(conn1));}
+            4 => {let _ = print_records(query_db_all::<DiskRecord>(conn1));}
             5 => return,
             _ => {
                 println!("Invalid input. Please enter a number 1-5.");
@@ -314,8 +316,8 @@ fn live_data_feed() {
     }
 }
 
-fn create_schema(conn: &Connection) {
-
+fn create_schema(conn: Arc<Mutex<Connection>>) {
+    let conn = conn.lock().unwrap();
     match conn.execute(
         "CREATE TABLE IF NOT EXISTS component (
                 id INTEGER PRIMARY KEY,
@@ -385,10 +387,9 @@ fn create_schema(conn: &Connection) {
     }
 }
 
-fn write_sysdata(sys: &mut SystemData, conn: &Connection) {
+fn write_sysdata(sys: &mut SystemData, conn: Arc<Mutex<Connection>>) {
     // Refresh system data
     sys.refresh_all();
-
     // Create a new SysRecord with current system information
     let sys_record = SysRecord{
         os: SystemData::name().unwrap(),
@@ -396,8 +397,8 @@ fn write_sysdata(sys: &mut SystemData, conn: &Connection) {
         hostname: SystemData::host_name().unwrap(),
     };
     // Query existing SysRecords from the database
-    let old_records_result = query_db_all::<SysRecord>(conn);
-
+    let old_records_result = query_db_all::<SysRecord>(conn.clone());
+    let conn = conn.lock().unwrap();
     match old_records_result {
         Ok(old_records) => {
             if old_records.is_empty() {
@@ -433,10 +434,11 @@ fn write_sysdata(sys: &mut SystemData, conn: &Connection) {
 }
 
 
-fn query_db_all<T>(conn: &Connection) -> Result<Vec<T>>
+fn query_db_all<T>(conn: Arc<Mutex<Connection>>) -> Result<Vec<T>>
 where
     T: Record,
 {
+    let conn = conn.lock().unwrap();
     let mut stmt = conn.prepare(T::query())?;
     let record_iter = stmt.query_map([], |row| T::from_row(row))?;
 
