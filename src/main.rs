@@ -1,7 +1,7 @@
 use std::{fmt::{self}, io, sync::{mpsc::Sender, Arc, Mutex}, thread, time::Duration};
 use chrono::prelude::*;
-use rusqlite::{Params, Connection, Result, Row};
-use sysinfo::{Components, Disk, Disks, System as SystemData};
+use rusqlite::{Connection, Result, Row};
+use sysinfo::{Components, Disks, System as SystemData};
 use regex::Regex;
 use std::sync::mpsc;
 
@@ -71,7 +71,7 @@ impl Record for ComponentRecord {
     }
 
     fn query() -> &'static str {
-        "SELECT datetime, label, temp FROM components"
+        "SELECT datetime, label, temp FROM component"
     }
 
     fn from_row(row: &Row) -> Result<Self> {
