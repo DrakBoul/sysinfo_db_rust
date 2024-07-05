@@ -551,29 +551,6 @@ fn validate_datetime_range(dt_range: String) -> Vec<String> {
     
 }
 
-fn record(conn: Arc<Mutex<Connection>>, rx: &mpsc::Receiver<u8>) {
-    create_schema(conn.clone());
-    let mut sys = SystemData::new_all();
-    write_sysdata(&mut sys, conn.clone());
-
-    loop {
-        match rx.try_recv() {
-            Ok(incoming) => {
-                if incoming == 0 {
-                    break; // Exit loop if received 0
-                } else if incoming == 1 {
-                    write_all_records(&mut sys, conn.clone(), false);
-                } else {
-                    write_all_records(&mut sys, conn.clone(), true);
-                }
-                thread::sleep(Duration::from_secs(10)); 
-            }
-            Err(_) => {
-                continue;
-            }
-        }
-    }
-}
 
 fn write_all_records(sys: &mut SystemData, conn: Arc<Mutex<Connection>>, p: bool) {
 
