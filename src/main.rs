@@ -8,6 +8,7 @@ use std::sync::mpsc;
 trait Record: Sized + fmt::Display {
     fn write_to_db(&self, conn: Arc<Mutex<Connection>>) -> Result<()>;
     fn query() -> &'static str;
+    fn query_by_dt(start_dt: String, end_dt: String) -> String;
     fn from_row(row: &Row) -> Result<Self>;
     
 }
@@ -36,6 +37,13 @@ impl Record for SysRecord {
 
     fn query() -> &'static str {
         "SELECT os, osversion, hostname FROM sys"
+    }
+
+    fn query_by_dt(start_dt: String, end_dt: String) -> String {
+        // no functionality currently needed for querying system records by datetime
+        let _ = start_dt;
+        let _ = end_dt;
+        "SELECT os, osversion, hostname FROM sys".to_string()
     }
 
     fn from_row(row: &Row) -> Result<Self> {
@@ -72,6 +80,12 @@ impl Record for ComponentRecord {
 
     fn query() -> &'static str {
         "SELECT datetime, label, temp FROM component"
+    }
+
+    fn query_by_dt(start_dt: String, end_dt: String) -> String {
+        // no functionality currently needed for querying system records by datetime
+        format!("SELECT datetime, label, temp FROM component WHERE datetime BETWEEN {} AND {}", start_dt, end_dt)
+        
     }
 
     fn from_row(row: &Row) -> Result<Self> {
@@ -111,6 +125,10 @@ impl Record for DiskRecord {
     fn query() -> &'static str {
         "SELECT datetime, name, total, available FROM disk"
     }
+    
+    fn query_by_dt(start_dt: String, end_dt: String) -> String {
+        format!("SELECT datetime, name, total, available FROM disk WHERE datetime BETWEEN {} AND {}", start_dt, end_dt)
+    }
 
     fn from_row(row: &Row) -> Result<Self> {
         Ok(DiskRecord {
@@ -149,6 +167,10 @@ impl Record for RAMRecord {
 
     fn query() -> &'static str {
         "SELECT datetime, total_memory, used_memory, total_swap, used_swap FROM ram"
+    }
+
+    fn query_by_dt(start_dt: String, end_dt: String) -> String {
+        format!("SELECT datetime, total_memory, used_memory, total_swap, used_swap FROM ram WHERE datetime BETWEEN {} AND {}", start_dt, end_dt)
     }
 
     fn from_row(row: &Row) -> Result<Self> {
@@ -499,8 +521,7 @@ fn write_sysdata(sys: &mut SystemData, conn: Arc<Mutex<Connection>>) {
 
 fn query_db_all<T>(conn: Arc<Mutex<Connection>>) -> Result<Vec<T>>
 where
-    T: Record,
-{
+    T: Record {
     let conn = conn.lock().unwrap();
     let mut stmt = conn.prepare(T::query())?;
     let record_iter = stmt.query_map([], |row| T::from_row(row))?;
@@ -516,8 +537,7 @@ where
 
 fn print_records<T>(records: Result<Vec<T>>) -> Result<()>
 where
-    T: Record + std::fmt::Display,
-{
+    T: Record + std::fmt::Display {
     match records {
         Ok(records) => {
             for record in records {
@@ -527,6 +547,60 @@ where
         }
         Err(e) => Err(e),
     }
+}
+
+fn query_by_dt<T>(conn: Arc<Mutex<Connection>>, start_dt: String, end_dt: String) -> Result<Vec<T>>
+where 
+    T: Record {
+
+    let conn = conn.lock().unwrap();
+    let mut stmt = conn.prepare(&T::query_by_dt(start_dt, end_dt))?;
+    let record_iter = stmt.query_map([], |row| T::from_row(row))?;
+    
+    let mut records = Vec::new();
+    for record in record_iter {
+        records.push(record?);
+    }
+
+    Ok(records)
+
+
+}
+
+fn query_choice<T>(conn: Arc<Mutex<Connection>>) 
+where 
+    T: Record {
+    loop {
+        println!("Choose how to query Records:");
+        println!("1.    All Records");
+        println!("2.    By Date Time");
+        println!("3.    Go Back");
+        let input = read_string("");
+        let input: u8 = match input.trim().parse() {
+            Ok(i) => i,
+            Err(_) => {
+                println!("Invlaid Input. Please enter a number.");
+                continue;
+            }
+        };
+        match input {
+            1 => {
+                let _ = print_records(query_db_all::<T>(conn.clone()));
+            },
+            2 => {
+                continue;
+            },
+            3 => {
+                break;
+            }
+            _ => {
+                println!("Please enter one of the options given.");
+                continue;
+            }
+        }
+    }
+
+
 }
 
 // TODO: Refactor all the times we read input to use this function.
@@ -540,7 +614,7 @@ fn read_string(prompt: &str) -> String {
     input
 }
 
-fn validate_datetime_range(dt_range: String) -> Vec<String> {
+fn get_datetime_range(dt_range: String) -> Vec<String> {
     let re = Regex::new(r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}").unwrap();
 
     let dates: Vec<String> = re.find_iter(dt_range.as_str())
@@ -550,6 +624,7 @@ fn validate_datetime_range(dt_range: String) -> Vec<String> {
     dates
     
 }
+
 
 
 fn write_all_records(sys: &mut SystemData, conn: Arc<Mutex<Connection>>, p: bool) {
