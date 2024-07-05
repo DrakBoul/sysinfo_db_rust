@@ -1,4 +1,4 @@
-use std::{fmt::{self}, io, sync::{mpsc::Sender, Arc, Mutex}, thread, time::Duration};
+use std::{fmt, io, sync::{mpsc::Sender, Arc, Mutex}, thread, time::Duration};
 use chrono::prelude::*;
 use rusqlite::{Connection, Result, Row};
 use sysinfo::{Components, Disks, System as SystemData};
@@ -84,7 +84,7 @@ impl Record for ComponentRecord {
 
     fn query_by_dt(start_dt: String, end_dt: String) -> String {
         // no functionality currently needed for querying system records by datetime
-        format!("SELECT datetime, label, temp FROM component WHERE datetime BETWEEN {} AND {}", start_dt, end_dt)
+        format!("SELECT datetime, label, temp FROM component WHERE datetime BETWEEN '{}' AND '{}'", start_dt, end_dt)
         
     }
 
@@ -127,7 +127,7 @@ impl Record for DiskRecord {
     }
     
     fn query_by_dt(start_dt: String, end_dt: String) -> String {
-        format!("SELECT datetime, name, total, available FROM disk WHERE datetime BETWEEN {} AND {}", start_dt, end_dt)
+        format!("SELECT datetime, name, total, available FROM disk WHERE datetime BETWEEN '{}' AND '{}'", start_dt, end_dt)
     }
 
     fn from_row(row: &Row) -> Result<Self> {
@@ -170,7 +170,7 @@ impl Record for RAMRecord {
     }
 
     fn query_by_dt(start_dt: String, end_dt: String) -> String {
-        format!("SELECT datetime, total_memory, used_memory, total_swap, used_swap FROM ram WHERE datetime BETWEEN {} AND {}", start_dt, end_dt)
+        format!("SELECT datetime, total_memory, used_memory, total_swap, used_swap FROM ram WHERE datetime BETWEEN '{}' AND '{}'", start_dt, end_dt)
     }
 
     fn from_row(row: &Row) -> Result<Self> {
@@ -555,7 +555,13 @@ where
 
     let conn = conn.lock().unwrap();
     let mut stmt = conn.prepare(&T::query_by_dt(start_dt, end_dt))?;
-    let record_iter = stmt.query_map([], |row| T::from_row(row))?;
+    let record_iter = match stmt.query_map([], |row| T::from_row(row)) {
+        Ok(record_iter) => record_iter,
+        Err(e) => {
+            eprintln!("Failed to execute query: {}", e);
+            return Err(e);
+        }
+    };
     
     let mut records = Vec::new();
     for record in record_iter {
@@ -591,7 +597,7 @@ where
                 let dates = get_datetime_range();
                 let start_dt = &dates[0];
                 let end_dt = &dates[1];
-                let _ = print_records(query_by_dt::<T>(conn.clone(), start_dt.to_string(), end_dt.to_string()));
+                let _ = print_records::<T>(query_by_dt::<T>(conn.clone(), start_dt.to_string(), end_dt.to_string()));
 
             },
             3 => {
@@ -624,7 +630,6 @@ fn parse_datetime_range(dt_range: String) -> Vec<String> {
     let dates: Vec<String> = re.find_iter(dt_range.as_str())
         .map(|m| m.as_str().to_string())
         .collect();
-
     dates
     
 }
