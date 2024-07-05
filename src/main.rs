@@ -356,9 +356,9 @@ fn view_records(conn: Arc<Mutex<Connection>>) {
         let conn1 = conn.clone();
         match input {
             1 => {let _ = print_records(query_db_all::<SysRecord>(conn1));},
-            2 => {let _ = print_records(query_db_all::<ComponentRecord>(conn1));}
-            3 => {let _ = print_records(query_db_all::<RAMRecord>(conn1));}
-            4 => {let _ = print_records(query_db_all::<DiskRecord>(conn1));}
+            2 => {query_choice::<ComponentRecord>(conn1)}
+            3 => {query_choice::<RAMRecord>(conn1)}
+            4 => {query_choice::<DiskRecord>(conn1)}
             5 => return,
             _ => {
                 println!("Invalid input. Please enter a number 1-5.");
@@ -588,7 +588,11 @@ where
                 let _ = print_records(query_db_all::<T>(conn.clone()));
             },
             2 => {
-                continue;
+                let dates = get_datetime_range();
+                let start_dt = &dates[0];
+                let end_dt = &dates[1];
+                let _ = print_records(query_by_dt::<T>(conn.clone(), start_dt.to_string(), end_dt.to_string()));
+
             },
             3 => {
                 break;
@@ -614,7 +618,7 @@ fn read_string(prompt: &str) -> String {
     input
 }
 
-fn get_datetime_range(dt_range: String) -> Vec<String> {
+fn parse_datetime_range(dt_range: String) -> Vec<String> {
     let re = Regex::new(r"[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}").unwrap();
 
     let dates: Vec<String> = re.find_iter(dt_range.as_str())
@@ -625,7 +629,35 @@ fn get_datetime_range(dt_range: String) -> Vec<String> {
     
 }
 
+fn get_datetime_range() -> Vec<String> {
+    println!("press 'q' to quit at any time.");
+    loop {
+        let dt_range = read_string("Enter a date time range (YYYY-MM-DD HH:MM:SS --- YYYY-MM-DD HH:MM:SS):\n");
+        if dt_range.trim() == "q" {
+            let empty = vec!("".to_string());
+            return empty
+        }
+        let dates = parse_datetime_range(dt_range);
+        match dates.len() {
+            0 => {
+                println!("No datetime range given, please follow the format provided.");
+                continue;
+            }
+            1 => {
+                println!("Only 1 datetime given, please give two datetimes to form a range you want to query.");
+                continue;
+            }
+            2 => {
+                return dates
+            }
+            _ => {
+                println!("Too many datetimes provided. Please enter two datetimes to form a range you want to query.")
+            }
+        }
+        
+    }
 
+}
 
 fn write_all_records(sys: &mut SystemData, conn: Arc<Mutex<Connection>>, p: bool) {
 
