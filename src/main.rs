@@ -301,7 +301,6 @@ fn view_records_menu() -> u8 {
     input
 }
 
-// TODO: Write these 4 functions for the main logic of the program
 fn start_recording(tx: Sender<u8>) {
     // Send message to start recording
     if let Err(err) = tx.send(1) {
@@ -600,7 +599,6 @@ where
 }
 
 
-// TODO: Refactor all the times we read input to use this function.
 fn read_string(prompt: &str) -> String {
 
     println!("{}", prompt);
