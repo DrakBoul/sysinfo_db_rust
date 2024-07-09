@@ -170,7 +170,7 @@ impl Record for RAMRecord {
     }
 
     fn query_by_dt(start_dt: String, end_dt: String) -> String {
-        format!("SELECT datetime, total_memory, used_memory, total_swap, used_swap FROM ram WHERE datetime BETWEEN '{}' AND '{}'", start_dt, end_dt)
+        format!("SELECT datetime, total_memory, used_memory, total_swap, used_swap FROM ram WHERE datetime BETWEEN {} AND {}", start_dt, end_dt)
     }
 
     fn from_row(row: &Row) -> Result<Self> {
@@ -241,11 +241,7 @@ fn main() {
     // Loop to handle user input
     loop {
         start_menu();
-        let mut input = String::new();
-
-        io::stdin()
-            .read_line(&mut input)
-            .expect("Failed to read input.");
+        let input = read_string("");
         
         let input: u8 = match input.trim().parse() {
             Ok(n) => n,
@@ -283,7 +279,7 @@ fn start_menu() {
 
 }
 
-fn view_records_menu(input: &mut String) -> u8 {
+fn view_records_menu() -> u8 {
 
     println!("Please select which type of records to view:");
     println!("1.    System Data");
@@ -291,21 +287,18 @@ fn view_records_menu(input: &mut String) -> u8 {
     println!("3.    Ram and Swap");
     println!("4.    Disks");
     println!("5.    Go back");
+    
+    let input = read_string("");
+    let input: u8 = match input.trim().parse() {
+        Ok(n) => n,
 
-    io::stdin()
-            .read_line( input)
-            .expect("Failed to read input.");
-
-        let input: u8 = match input.trim().parse() {
-            Ok(n) => n,
-
-            Err(_) => {
-                println!("Invalid input. Please enter a number in the range 1-5.");
-                0
-            }
-        }; 
-        // return our input from user back to the view records function
-        input
+        Err(_) => {
+            println!("Invalid input. Please enter a number in the range 1-5.");
+            0
+        }
+    }; 
+    // return our input from user back to the view records function
+    input
 }
 
 // TODO: Write these 4 functions for the main logic of the program
@@ -319,10 +312,7 @@ fn start_recording(tx: Sender<u8>) {
     println!("enter 'q' at any time to return to the main menu");
 
     loop {
-        let mut input: String = String::new(); 
-        io::stdin()
-            .read_line(&mut input)
-            .expect("Reading failed");
+        let input = read_string("");
 
         let input: char = match input.trim().parse() {
             Ok(c) => c,
@@ -351,14 +341,13 @@ fn stop_recording(tx: Sender<u8>) {
 fn view_records(conn: Arc<Mutex<Connection>>) {
 
     loop {
-        let mut input = String::new();
-        let input = view_records_menu(&mut input);
-        let conn1 = conn.clone();
+        let input = view_records_menu();
+        let conn_clone = conn.clone();
         match input {
-            1 => {let _ = print_records(query_db_all::<SysRecord>(conn1));},
-            2 => {query_choice::<ComponentRecord>(conn1)}
-            3 => {query_choice::<RAMRecord>(conn1)}
-            4 => {query_choice::<DiskRecord>(conn1)}
+            1 => {let _ = print_records(query_db_all::<SysRecord>(conn_clone));},
+            2 => {query_choice::<ComponentRecord>(conn_clone)}
+            3 => {query_choice::<RAMRecord>(conn_clone)}
+            4 => {query_choice::<DiskRecord>(conn_clone)}
             5 => return,
             _ => {
                 println!("Invalid input. Please enter a number 1-5.");
@@ -376,10 +365,7 @@ fn live_data_feed(tx: Sender<u8>) {
     println!("Starting live data feed...");
     println!("Press 'q' then enter to return to main menu.");
     loop {
-        let mut input: String = String::new(); 
-        io::stdin()
-            .read_line(&mut input)
-            .expect("Reading failed");
+        let input = read_string("");
 
         let input: char = match input.trim().parse() {
             Ok(c) => c,
@@ -612,6 +598,7 @@ where
 
 
 }
+
 
 // TODO: Refactor all the times we read input to use this function.
 fn read_string(prompt: &str) -> String {
