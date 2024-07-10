@@ -10,9 +10,19 @@ Next change your current working directory to sysinfo_db_rust:
 ```
 cd sysinfo_db_rust
 ```
+Now make a new directory called "data" to hold your sqlite database. <br> 
+
+```
+mkdir data
+```
+<br>
+
+__Note: Make sure the folder is named "data". The program looks specifically in this folder for the database file. If you wish to change the location feel free to modify the file path of the database in the source code.__ <br> <br>
+
 Then run the program by running cargo run command:
 ```
 cargo run 
 ```
-
+<br> 
+No need to create the database file yourself, the program will do it for you automatically within the "data" folder you just created. <br><br>
 And your off!!! feel free to play around with the program and monitor your system.
