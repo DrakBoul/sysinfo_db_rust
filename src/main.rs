@@ -1,4 +1,4 @@
-use std::{fmt, io, sync::{mpsc::Sender, Arc, Mutex}, thread, time::Duration};
+use std::{fmt, sync::{mpsc::Sender, Arc, Mutex}, thread, time::Duration};
 use chrono::prelude::*;
 use rusqlite::{Connection, Result, Row};
 use sysinfo::{Components, Disks, System as SystemData};
