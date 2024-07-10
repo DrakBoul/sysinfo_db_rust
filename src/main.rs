@@ -580,6 +580,9 @@ where
             },
             2 => {
                 let dates = get_datetime_range();
+                if dates[0] == "" {
+                    break;
+                }
                 let start_dt = &dates[0];
                 let end_dt = &dates[1];
                 let _ = print_records::<T>(query_by_dt::<T>(conn.clone(), start_dt.to_string(), end_dt.to_string()));
